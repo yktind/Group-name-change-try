@@ -1,6 +1,5 @@
 from flask import Flask, request, render_template_string, flash, redirect, url_for
 from instagrapi import Client
-import time
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key"
@@ -12,11 +11,11 @@ HTML_TEMPLATE = '''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instagram Nickname Changer</title>
+    <title>Instagram Auto Comment</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            background-color: #f3f4f6;
+            background-color: #f0f8ff;
             margin: 0;
             padding: 0;
             display: flex;
@@ -29,7 +28,7 @@ HTML_TEMPLATE = '''
             padding: 30px;
             border-radius: 10px;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-            max-width: 400px;
+            max-width: 500px;
             width: 100%;
         }
         h1 {
@@ -65,7 +64,7 @@ HTML_TEMPLATE = '''
 </head>
 <body>
     <div class="container">
-        <h1>Nickname Changer</h1>
+        <h1>Instagram Auto Comment</h1>
         <form action="/" method="POST">
             <label for="username">Instagram Username:</label>
             <input type="text" id="username" name="username" placeholder="Enter your username" required>
@@ -73,13 +72,13 @@ HTML_TEMPLATE = '''
             <label for="password">Instagram Password:</label>
             <input type="password" id="password" name="password" placeholder="Enter your password" required>
 
-            <label for="group_id">Group Chat ID:</label>
-            <input type="text" id="group_id" name="group_id" placeholder="Enter group chat ID" required>
+            <label for="post_url">Target Post URL:</label>
+            <input type="text" id="post_url" name="post_url" placeholder="Enter target post URL" required>
 
-            <label for="nickname">New Nickname:</label>
-            <input type="text" id="nickname" name="nickname" placeholder="Enter new nickname" required>
+            <label for="comment">Comment:</label>
+            <input type="text" id="comment" name="comment" placeholder="Enter your comment" required>
 
-            <button type="submit">Change Nicknames</button>
+            <button type="submit">Send Comment</button>
         </form>
     </div>
 </body>
@@ -87,37 +86,36 @@ HTML_TEMPLATE = '''
 '''
 
 @app.route("/", methods=["GET", "POST"])
-def change_nickname():
+def auto_comment():
     if request.method == "POST":
-        # Get form inputs
         username = request.form["username"]
         password = request.form["password"]
-        group_id = request.form["group_id"]
-        new_nickname = request.form["nickname"]
+        post_url = request.form["post_url"]
+        comment = request.form["comment"]
 
         try:
-            # Login to Instagram
+            # Instagram Login
             cl = Client()
             print("[INFO] Logging in...")
             cl.login(username, password)
             print("[SUCCESS] Logged in!")
 
-            # Fetch group members
-            group = cl.direct_thread(group_id)
-            members = group.users
+            # Extract Post Media ID from URL
+            media_id = cl.media_id(cl.media_pk_from_url(post_url))
+            print(f"[INFO] Media ID fetched: {media_id}")
 
-            # Change nickname for each member
-            for member in members:
-                print(f"[INFO] Changing nickname for user {member.username}")
-                cl.direct_thread_user_update_nickname(group_id, member.pk, new_nickname)
-                print(f"[SUCCESS] Nickname changed for {member.username}")
-                time.sleep(2)  # Delay to avoid rate-limiting
+            # Send Comment
+            cl.media_comment(media_id, comment)
+            print(f"[SUCCESS] Comment sent: {comment}")
 
-            flash("Nicknames updated successfully!", "success")
+            flash("Comment sent successfully!", "success")
         except Exception as e:
-            flash(f"An error occurred: {e}", "error")
+            flash(f"Error: {str(e)}", "error")
+
+        return redirect(url_for("auto_comment"))
 
     return render_template_string(HTML_TEMPLATE)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+    
