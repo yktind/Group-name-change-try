@@ -1,191 +1,156 @@
-from flask import Flask, request, render_template_string, redirect, url_for, flash
-from instagrapi import Client  # Instagram Private API library
-import os
+from flask import Flask, request, render_template, redirect, url_for
+from instagrapi import Client
 import time
+import threading
 
-# Initialize Flask app
+# Flask app initialization
 app = Flask(__name__)
-app.secret_key = "your_secret_key"
+app.config['SECRET_KEY'] = 'your_secret_key'
 
-# HTML Template
-HTML_TEMPLATE = '''
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>INSTAGRAM GROUP INBOX OFFLINE SERVER</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: black;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            color: red;
-        }
-        .container {
-            background-color: #ffffff;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-            max-width: 400px;
-            width: 100%;
-        }
-        h1 {
-            text-align: center;
-            color: red;
-            margin-bottom: 20px;
-        }
-        label {
-            display: block;
-            font-weight: bold;
-            margin: 10px 0 5px;
-            color: red;
-        }
-        input, select, button {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 15px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            font-size: 16px;
-            background-color: white;
-        }
-        input:focus, select:focus, button:focus {
-            outline: none;
-            border-color: black;
-            box-shadow: 0 0 5px rgba(255, 105, 180, 0.5);
-        }
-        button {
-            background-color: black;
-            color: red;
-            border: none;
-            cursor: pointer;
-            font-weight: bold;
-        }
-        button:hover {
-            background-color: #ff69b4;
-        }
-        .message {
-            color: white;
-            font-size: 14px;
-            text-align: center;
-        }
-        .success {
-            color: green;
-            font-size: 14px;
-            text-align: center;
-        }
-        .info {
-            font-size: 12px;
-            color: #777;
-            margin-bottom: -10px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>INSTAGRAM GROUP INBOX OFFLINE SERVER</h1>
-        <form action="/" method="POST" enctype="multipart/form-data">
-            <label for="username">Instagram Username:</label>
-            <input type="text" id="username" name="username" placeholder="Enter your username" required>
+# Global variables
+client = None
+is_running = False
+stop_flag = False
 
-            <label for="password">Instagram Password:</label>
-            <input type="password" id="password" name="password" placeholder="Enter your password" required>
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-            <label for="choice">Send To:</label>
-            <select id="choice" name="choice" required>
-                <option value="inbox">Inbox</option>
-                <option value="group">Group</option>
-            </select>
+@app.route('/login', methods=['POST'])
+def login():
+    global client
+    username = request.form['username']
+    password = request.form['password']
+    client = Client()
 
-            <label for="target_username">Target Username (for Inbox):</label>
-            <input type="text" id="target_username" name="target_username" placeholder="Enter target username">
+    try:
+        client.login(username, password)
+        return redirect(url_for('dashboard'))
+    except Exception as e:
+        return f"Login failed: {str(e)}"
 
-            <label for="thread_id">Thread ID (for Group):</label>
-            <input type="text" id="thread_id" name="thread_id" placeholder="Enter group thread ID">
+@app.route('/dashboard')
+def dashboard():
+    return render_template('dashboard.html')
 
-            <label for="haters_name">Haters Name:</label>
-            <input type="text" id="haters_name" name="haters_name" placeholder="Enter hater's name" required>
+@app.route('/send_messages', methods=['POST'])
+def send_messages():
+    global is_running, stop_flag
 
-            <label for="message_file">Message File:</label>
-            <input type="file" id="message_file" name="message_file" required>
-            <p class="info">Upload a file containing messages, one per line.</p>
+    if is_running:
+        return "A process is already running!"
 
-            <label for="delay">Delay (seconds):</label>
-            <input type="number" id="delay" name="delay" placeholder="Enter delay in seconds" required>
+    file = request.files['txt_file']
+    delay = int(request.form['delay'])
+    hater_username = request.form['hater_username']
 
-            <button type="submit">Send Messages</button>
-        </form>
-    </div>
-</body>
-</html>
-'''
+    if file:
+        usernames = file.read().decode('utf-8').splitlines()
+        stop_flag = False
 
-# Endpoint to render form and process requests
-@app.route("/", methods=["GET", "POST"])
-def automate_instagram():
-    if request.method == "POST":
-        try:
-            # Get form data
-            username = request.form["username"]
-            password = request.form["password"]
-            choice = request.form["choice"]
-            target_username = request.form.get("target_username")
-            thread_id = request.form.get("thread_id")
-            haters_name = request.form["haters_name"]
-            delay = int(request.form["delay"])
-            message_file = request.files["message_file"]
+        def message_sender():
+            global is_running, stop_flag
+            is_running = True
 
-            # Validate message file
-            messages = message_file.read().decode("utf-8").splitlines()
-            if not messages:
-                flash("Message file is empty!", "error")
-                return redirect(url_for("automate_instagram"))
-
-            # Initialize Instagram Client
-            cl = Client()
-            cl.login(username, password)
-            flash("Login successful!", "success")
-
-            # Process messages
-            for message in messages:
-                if choice == "inbox":
-                    if not target_username:
-                        flash("Target username is required for inbox messaging.", "error")
-                        return redirect(url_for("automate_instagram"))
-
-                    # Send message to inbox
-                    user_id = cl.user_id_from_username(target_username)
-                    cl.direct_send(message, [user_id])
-                    print(f"Message sent to {target_username}: {message}")
-
-                elif choice == "group":
-                    if not thread_id:
-                        flash("Thread ID is required for group messaging.", "error")
-                        return redirect(url_for("automate_instagram"))
-
-                    # Send message to group
-                    cl.direct_send(message, [], thread_id=thread_id)
-                    print(f"Message sent to thread {thread_id}: {message}")
-
+            for username in usernames:
+                if stop_flag:
+                    break
+                try:
+                    client.direct_send(f"Hi {username}, this is a message from the script!", username)
+                    print(f"Message sent to {username}")
+                except Exception as e:
+                    print(f"Failed to send message to {username}: {str(e)}")
                 time.sleep(delay)
 
-            flash("All messages sent successfully!", "success")
-            return redirect(url_for("automate_instagram"))
+            is_running = False
 
-        except Exception as e:
-            flash(f"An error occurred: {str(e)}", "error")
-            return redirect(url_for("automate_instagram"))
+        threading.Thread(target=message_sender).start()
+        return "Messages are being sent in the background!"
+    else:
+        return "No file uploaded!"
 
-    # Render the form
-    return render_template_string(HTML_TEMPLATE)
+@app.route('/stop', methods=['POST'])
+def stop():
+    global stop_flag
+    stop_flag = True
+    return "Stopping the current process."
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+# HTML Templates
+index_html = """
+<!doctype html>
+<html>
+    <head>
+        <title>Instagram Login</title>
+    </head>
+    <body>
+        <h1>Login to Instagram</h1>
+        <form action="/login" method="POST">
+            <input type="text" name="username" placeholder="Username" required><br>
+            <input type="password" name="password" placeholder="Password" required><br>
+            <button type="submit">Login</button>
+        </form>
+    </body>
+</html>
+"""
 
-                    
+dashboard_html = """
+<!doctype html>
+<html>
+    <head>
+        <title>Dashboard</title>
+    </head>
+    <body>
+        <h1>Send Messages</h1>
+        <form action="/send_messages" method="POST" enctype="multipart/form-data">
+            <label for="txt_file">Upload Text File (Usernames):</label>
+            <input type="file" name="txt_file" required><br>
+            <label for="hater_username">Hater's Username:</label>
+            <input type="text" name="hater_username" required><br>
+            <label for="delay">Delay (seconds):</label>
+            <input type="number" name="delay" min="1" required><br>
+            <button type="submit">Send Messages</button>
+        </form>
+        <form action="/stop" method="POST">
+            <button type="submit">Stop</button>
+        </form>
+    </body>
+</html>
+"""
+
+@app.route('/styles.css')
+def styles():
+    return """
+        body {
+            background: rgb(220, 240, 255);
+            font-family: Arial, sans-serif;
+        }
+        form {
+            margin: 20px;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            background: #fff;
+        }
+        button {
+            background: lightblue;
+            border: none;
+            padding: 10px 15px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        button:hover {
+            background: deepskyblue;
+        }
+    """
+
+@app.before_first_request
+def setup_templates():
+    # Create templates dynamically
+    with open('templates/index.html', 'w') as f:
+        f.write(index_html)
+    with open('templates/dashboard.html', 'w') as f:
+        f.write(dashboard_html)
+
+if __name__ == '__main__':
+    app.run(port=5000, debug=True)
+        
