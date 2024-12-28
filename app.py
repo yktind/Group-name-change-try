@@ -1,156 +1,159 @@
-from flask import Flask, request, render_template, redirect, url_for
+from flask import Flask, request, render_template_string, redirect, url_for, flash
 from instagrapi import Client
+import os
 import time
-import threading
 
-# Flask app initialization
+# Initialize Flask app
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your_secret_key'
+app.secret_key = "your_secret_key"
 
-# Global variables
-client = None
-is_running = False
-stop_flag = False
+# Global variable for Instagram client session
+ig_client = None
 
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/login', methods=['POST'])
-def login():
-    global client
-    username = request.form['username']
-    password = request.form['password']
-    client = Client()
-
-    try:
-        client.login(username, password)
-        return redirect(url_for('dashboard'))
-    except Exception as e:
-        return f"Login failed: {str(e)}"
-
-@app.route('/dashboard')
-def dashboard():
-    return render_template('dashboard.html')
-
-@app.route('/send_messages', methods=['POST'])
-def send_messages():
-    global is_running, stop_flag
-
-    if is_running:
-        return "A process is already running!"
-
-    file = request.files['txt_file']
-    delay = int(request.form['delay'])
-    hater_username = request.form['hater_username']
-
-    if file:
-        usernames = file.read().decode('utf-8').splitlines()
-        stop_flag = False
-
-        def message_sender():
-            global is_running, stop_flag
-            is_running = True
-
-            for username in usernames:
-                if stop_flag:
-                    break
-                try:
-                    client.direct_send(f"Hi {username}, this is a message from the script!", username)
-                    print(f"Message sent to {username}")
-                except Exception as e:
-                    print(f"Failed to send message to {username}: {str(e)}")
-                time.sleep(delay)
-
-            is_running = False
-
-        threading.Thread(target=message_sender).start()
-        return "Messages are being sent in the background!"
-    else:
-        return "No file uploaded!"
-
-@app.route('/stop', methods=['POST'])
-def stop():
-    global stop_flag
-    stop_flag = True
-    return "Stopping the current process."
-
-# HTML Templates
-index_html = """
-<!doctype html>
-<html>
-    <head>
-        <title>Instagram Login</title>
-    </head>
-    <body>
-        <h1>Login to Instagram</h1>
-        <form action="/login" method="POST">
-            <input type="text" name="username" placeholder="Username" required><br>
-            <input type="password" name="password" placeholder="Password" required><br>
-            <button type="submit">Login</button>
-        </form>
-    </body>
-</html>
-"""
-
-dashboard_html = """
-<!doctype html>
-<html>
-    <head>
-        <title>Dashboard</title>
-    </head>
-    <body>
-        <h1>Send Messages</h1>
-        <form action="/send_messages" method="POST" enctype="multipart/form-data">
-            <label for="txt_file">Upload Text File (Usernames):</label>
-            <input type="file" name="txt_file" required><br>
-            <label for="hater_username">Hater's Username:</label>
-            <input type="text" name="hater_username" required><br>
-            <label for="delay">Delay (seconds):</label>
-            <input type="number" name="delay" min="1" required><br>
-            <button type="submit">Send Messages</button>
-        </form>
-        <form action="/stop" method="POST">
-            <button type="submit">Stop</button>
-        </form>
-    </body>
-</html>
-"""
-
-@app.route('/styles.css')
-def styles():
-    return """
+# HTML Template with the new field added for Hater Name
+HTML_TEMPLATE = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Group Messaging</title>
+    <style>
         body {
-            background: rgb(220, 240, 255);
             font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: url('https://i.ibb.co/fFqG2rr/Picsart-24-07-11-17-16-03-306.jpg') no-repeat center center;
+            background-size: cover;
         }
-        form {
-            margin: 20px;
-            padding: 20px;
-            border: 1px solid #ccc;
+        .container {
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 30px;
             border-radius: 10px;
-            background: #fff;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            max-width: 400px;
+            width: 100%;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-weight: bold;
+            margin: 10px 0 5px;
+        }
+        input, select, button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        input:focus, select:focus, button:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
         }
         button {
-            background: lightblue;
+            background-color: #007bff;
+            color: white;
             border: none;
-            padding: 10px 15px;
             cursor: pointer;
-            border-radius: 5px;
+            font-weight: bold;
         }
         button:hover {
-            background: deepskyblue;
+            background-color: #0056b3;
         }
-    """
+        .message {
+            color: red;
+            font-size: 14px;
+            text-align: center;
+        }
+        .success {
+            color: green;
+            font-size: 14px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Instagram Group Messaging</h1>
+        <form action="/" method="POST" enctype="multipart/form-data">
+            <label for="username">Instagram Username:</label>
+            <input type="text" id="username" name="username" placeholder="Enter your username" required>
 
-@app.before_first_request
-def setup_templates():
-    # Create templates dynamically
-    with open('templates/index.html', 'w') as f:
-        f.write(index_html)
-    with open('templates/dashboard.html', 'w') as f:
-        f.write(dashboard_html)
+            <label for="password">Instagram Password:</label>
+            <input type="password" id="password" name="password" placeholder="Enter your password" required>
 
-if __name__ == '__main__':
-    app.run(port=5000, debug=True)
-        
+            <label for="group_id">Group Chat ID:</label>
+            <input type="text" id="group_id" name="group_id" placeholder="Enter group chat ID" required>
+
+            <label for="message_file">Message File:</label>
+            <input type="file" id="message_file" name="message_file" required>
+            <p class="info">Upload a text file containing messages, one per line.</p>
+
+            <label for="delay">Delay (seconds):</label>
+            <input type="number" id="delay" name="delay" placeholder="Enter delay in seconds" required>
+
+            <label for="hater_name">Enter Hater Name:</label>
+            <input type="text" id="hater_name" name="hater_name" placeholder="Enter hater name" required>
+
+            <button type="submit">Send Messages</button>
+        </form>
+    </div>
+</body>
+</html>
+'''
+
+@app.route("/", methods=["GET", "POST"])
+def home():
+    global ig_client
+
+    if request.method == "POST":
+        try:
+            # Collect form data
+            username = request.form["username"]
+            password = request.form["password"]
+            group_id = request.form["group_id"]
+            delay = int(request.form["delay"])
+            hater_name = request.form["hater_name"]
+            message_file = request.files["message_file"]
+
+            # Read messages from file
+            messages = message_file.read().decode("utf-8").splitlines()
+            if not messages:
+                flash("Message file is empty!", "error")
+                return redirect(url_for("home"))
+
+            # Login to Instagram
+            if not ig_client:
+                ig_client = Client()
+                ig_client.login(username, password)
+                flash("Logged in successfully!", "success")
+
+            # Send messages to group
+            for message in messages:
+                personalized_message = message.replace("{hater}", hater_name)
+                print(f"Sending message to group {group_id}: {personalized_message}")
+                ig_client.direct_send(personalized_message, thread_ids=[group_id])
+                time.sleep(delay)  # Delay between messages
+
+            flash("All messages sent successfully!", "success")
+        except Exception as e:
+            flash(f"An error occurred: {e}", "error")
+
+        return redirect(url_for("home"))
+
+    return render_template_string(HTML_TEMPLATE)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
+                
