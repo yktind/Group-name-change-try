@@ -41,5 +41,7 @@ def send_message():
         return f"Error: {str(e)}"
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Use host='0.0.0.0' to make the server accessible externally
+    # Specify port 8080 for compatibility with most hosting services
+    app.run(host="0.0.0.0", port=8080, debug=True)
     
