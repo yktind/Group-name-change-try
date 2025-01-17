@@ -19,7 +19,6 @@ instabot = "^0.117.0"
 selenium = "^4.11"
 werkzeug = "^2.3"
 werkzeug = "^2.3.7
-black = "^23.9.0"  
 
 [tool.pyright]
 useLibraryCodeForTypes = true
