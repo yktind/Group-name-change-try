@@ -1,0 +1,147 @@
+from flask import Flask, request, render_template, redirect, url_for
+from instagrapi import Client
+import time
+import threading
+import os
+
+app = Flask(__name__)
+
+# Global Variables
+client = Client()
+running = False
+thread = None
+
+# Background Task for Sending Messages
+def send_messages(target_group, messages, delay, haters_name):
+    global running
+    running = True
+    for idx, message in enumerate(messages):
+        if not running:
+            break
+        try:
+            client.direct_send(f"{haters_name} {message}", [target_group])
+            print(f"[{idx+1}] Sent: {haters_name} {message}")
+            time.sleep(delay)
+        except Exception as e:
+            print(f"Error: {e}")
+    running = False
+
+# Routes
+@app.route('/')
+def index():
+    return '''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Instagram Group Chat Bot</title>
+        <style>
+            body {
+                background-color: #1a1a2e;
+                color: #eaeaea;
+                font-family: Arial, sans-serif;
+            }
+            .container {
+                max-width: 600px;
+                margin: 50px auto;
+                padding: 20px;
+                background: #162447;
+                border-radius: 10px;
+                box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            }
+            label {
+                display: block;
+                margin-bottom: 5px;
+            }
+            input, button {
+                width: 100%;
+                padding: 10px;
+                margin-bottom: 15px;
+                border-radius: 5px;
+                border: none;
+                font-size: 16px;
+            }
+            input {
+                background: #1f4068;
+                color: #eaeaea;
+            }
+            button {
+                background: #e43f5a;
+                color: #fff;
+                cursor: pointer;
+            }
+            button:hover {
+                background: #e8505b;
+            }
+            .stop-btn {
+                background: #f0932b;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Instagram Group Chat Bot</h1>
+            <form method="POST" action="/" enctype="multipart/form-data">
+                <label>Instagram Username:</label>
+                <input type="text" name="username" required>
+                <label>Instagram Password:</label>
+                <input type="password" name="password" required>
+                <label>Target Group Chat ID:</label>
+                <input type="text" name="group_id" required>
+                <label>Select Message File (TXT):</label>
+                <input type="file" name="message_file" accept=".txt" required>
+                <label>Enter Hater's Name:</label>
+                <input type="text" name="haters_name" required>
+                <label>Message Delay (in seconds):</label>
+                <input type="number" name="delay" value="10" required>
+                <button type="submit">Start Sending</button>
+            </form>
+            <form method="POST" action="/stop">
+                <button type="submit" class="stop-btn">Stop Sending</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    '''
+
+@app.route('/', methods=['POST'])
+def start_bot():
+    global running, thread
+    if running:
+        return "Bot is already running! Stop it first.", 400
+
+    # Get form data
+    username = request.form.get('username')
+    password = request.form.get('password')
+    group_id = request.form.get('group_id')
+    haters_name = request.form.get('haters_name')
+    delay = int(request.form.get('delay'))
+    message_file = request.files['message_file']
+    
+    # Read messages from file
+    messages = message_file.read().decode('utf-8').splitlines()
+
+    # Instagram login
+    try:
+        client.login(username, password)
+    except Exception as e:
+        return f"Login failed: {e}", 400
+
+    # Start message sending in a separate thread
+    thread = threading.Thread(target=send_messages, args=(group_id, messages, delay, haters_name))
+    thread.start()
+
+    return "Bot started! Sending messages."
+
+@app.route('/stop', methods=['POST'])
+def stop_bot():
+    global running
+    if running:
+        running = False
+        return "Bot stopped."
+    else:
+        return "Bot is not running!", 400
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
