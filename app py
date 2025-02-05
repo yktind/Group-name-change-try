@@ -1,164 +1,108 @@
-from flask import Flask, request, render_template_string, redirect, url_for, flash
 import os
 import time
+import threading
+from flask import Flask, request, render_template_string, redirect, url_for, session
 
 app = Flask(__name__)
-app.secret_key = "supersecretkey"  # Needed for flash messages
+app.secret_key = "your_secret_key"  # Change this for security
 
-# HTML for the webpage
-HTML_PAGE = """
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Dummy credentials (Replace with a secure method in production)
+VALID_USERNAME = "admin"
+VALID_PASSWORD = "password"
+
+# Store thread info
+worker_thread = None
+
+# HTML template (since you don’t want index.html)
+HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JACK INSTA SERVER</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: blue;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            color: pink;
-        }
-        .container {
-            background-color: #ffffff;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-            max-width: 400px;
-            width: 100%;
-        }
-        h1 {
-            text-align: center;
-            color: pink;
-            margin-bottom: 20px;
-        }
-        label {
-            display: block;
-            font-weight: bold;
-            margin: 10px 0 5px;
-            color: pink;
-        }
-        input, select, button {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 15px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            font-size: 16px;
-            background-color: yellow;
-        }
-        input:focus, select:focus, button:focus {
-            outline: none;
-            border-color: pink;
-            box-shadow: 0 0 5px rgba(255, 105, 180, 0.5);
-        }
-        button {
-            background-color: pink;
-            color: blue;
-            border: none;
-            cursor: pointer;
-            font-weight: bold;
-        }
-        button:hover {
-            background-color: #ff69b4;
-        }
-        .message {
-            color: red;
-            font-size: 14px;
-            text-align: center;
-        }
-        .success {
-            color: green;
-            font-size: 14px;
-            text-align: center;
-        }
-        .info {
-            font-size: 12px;
-            color: #777;
-            margin-bottom: -10px;
-        }
-    </style>
+    <title>Message Sender</title>
 </head>
 <body>
-    <div class="container">
-        <h1>OFLINE INSTAGRAM SERVER</h1>
-        <form action="/" method="POST" enctype="multipart/form-data">
-            <label for="username">Instagram Username:</label>
-            <input type="text" id="username" name="username" placeholder="Enter your username" required>
-
-            <label for="password">Instagram Password:</label>
-            <input type="password" id="password" name="password" placeholder="Enter your password" required>
-
-            <label for="choice">Send To:</label>
-            <select id="choice" name="choice" required>
-                <option value="inbox">Inbox</option>
-                <option value="group">Group</option>
-            </select>
-
-            <label for="target_username">Target Username (for Inbox):</label>
-            <input type="text" id="target_username" name="target_username" placeholder="Enter target username">
-
-            <label for="thread_id">Thread ID (for Group):</label>
-            <input type="text" id="thread_id" name="thread_id" placeholder="Enter group thread ID">
-
-            <label for="haters_name">Haters Name:</label>
-            <input type="text" id="haters_name" name="haters_name" placeholder="Enter hater's name" required>
-
-            <label for="message_file">Message File:</label>
-            <input type="file" id="message_file" name="message_file" required>
-            <p class="info">Upload a file containing messages, one per line.</p>
-
-            <label for="delay">Delay (seconds):</label>
-            <input type="number" id="delay" name="delay" placeholder="Enter delay in seconds" required>
-
-            <button type="submit">Send Messages</button>
+    {% if not session.get('logged_in') %}
+        <h2>Login</h2>
+        <form method="POST" action="/login">
+            <label>Username:</label>
+            <input type="text" name="username" required>
+            <br><br>
+            <label>Password:</label>
+            <input type="password" name="password" required>
+            <br><br>
+            <input type="submit" value="Login">
         </form>
-    </div>
+    {% else %}
+        <h2>Upload a TXT file</h2>
+        <form method="POST" action="/upload" enctype="multipart/form-data">
+            <input type="file" name="file" accept=".txt" required>
+            <br><br>
+            <label>Delay (seconds):</label>
+            <input type="number" name="delay" min="1" required>
+            <br><br>
+            <input type="submit" value="Submit">
+        </form>
+        <br>
+        <form action="/logout" method="POST">
+            <input type="submit" value="Logout">
+        </form>
+    {% endif %}
 </body>
 </html>
 """
 
-@app.route("/", methods=["GET", "POST"])
+def send_messages(file_path, delay):
+    """Worker thread function to send messages with a delay."""
+    with open(file_path, "r") as file:
+        for line in file:
+            print(f"Sending message: {line.strip()}")
+            time.sleep(delay)
+
+@app.route("/", methods=["GET"])
 def home():
-    if request.method == "POST":
-        # Extract form data
-        username = request.form.get("username")
-        password = request.form.get("password")
-        choice = request.form.get("choice")
-        target_username = request.form.get("target_username")
-        thread_id = request.form.get("thread_id")
-        haters_name = request.form.get("haters_name")
-        delay = int(request.form.get("delay"))
+    return render_template_string(HTML_TEMPLATE)
 
-        # Handle file upload
-        message_file = request.files.get("message_file")
-        if message_file and message_file.filename:
-            messages = message_file.read().decode().splitlines()
-        else:
-            flash("Message file is required.", "error")
-            return redirect(url_for("home"))
-
-        # Log input data (for debugging purposes)
-        print(f"Username: {username}, Target: {target_username or thread_id}, Haters: {haters_name}, Delay: {delay}s")
-
-        # Placeholder for processing logic
-        # This is where you'd interact with Instagram's API or your automation logic
-        for i, message in enumerate(messages):
-            print(f"Sending message {i+1}: {haters_name} {message}")
-            time.sleep(delay)  # Simulate delay between messages
-
-        flash("Messages sent successfully!", "success")
+@app.route("/login", methods=["POST"])
+def login():
+    username = request.form.get("username")
+    password = request.form.get("password")
+    
+    if username == VALID_USERNAME and password == VALID_PASSWORD:
+        session["logged_in"] = True
         return redirect(url_for("home"))
+    return "Invalid credentials. <a href='/'>Try again</a>"
 
-    return render_template_string(HTML_PAGE)
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.pop("logged_in", None)
+    return redirect(url_for("home"))
 
+@app.route("/upload", methods=["POST"])
+def upload():
+    if not session.get("logged_in"):
+        return redirect(url_for("home"))
+    
+    file = request.files.get("file")
+    delay = request.form.get("delay")
+
+    if not file or not delay:
+        return "Missing file or delay value. <a href='/'>Go back</a>"
+
+    delay = int(delay)
+
+    if file.filename.endswith(".txt"):
+        file_path = os.path.join(UPLOAD_FOLDER, file.filename)
+        file.save(file_path)
+        
+        global worker_thread
+        worker_thread = threading.Thread(target=send_messages, args=(file_path, delay))
+        worker_thread.start()
+
+        return "File uploaded and messages are being sent. <a href='/'>Go back</a>"
+    return "Only .txt files are allowed. <a href='/'>Try again</a>"
 
 if __name__ == "__main__":
-    # Run the Flask app on localhost at port 5000
     app.run(host="0.0.0.0", port=5000, debug=True)
