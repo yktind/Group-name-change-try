@@ -10,14 +10,12 @@ app = Flask(__name__)
 CHROME_DRIVER_PATH = 'path/to/chromedriver'
 
 def send_message(username, password, thread_id, message):
-    # Setup Selenium WebDriver (requires ChromeDriver)
     driver = webdriver.Chrome(CHROME_DRIVER_PATH)
     
     try:
         driver.get('https://www.instagram.com/accounts/login/')
-        time.sleep(3)  # Wait for page to load
+        time.sleep(3)
         
-        # Log in to Instagram
         username_input = driver.find_element_by_name('username')
         password_input = driver.find_element_by_name('password')
         
@@ -25,21 +23,20 @@ def send_message(username, password, thread_id, message):
         password_input.send_keys(password)
         password_input.send_keys(Keys.RETURN)
         
-        time.sleep(5)  # Wait for login
+        time.sleep(5)
         
-        # Go to the thread
         driver.get(f'https://www.instagram.com/direct/inbox/{thread_id}/')
-        time.sleep(3)  # Wait for thread to load
+        time.sleep(3)
         
-        # Find the message input field and send the message
         message_input = driver.find_element_by_tag_name('textarea')
         message_input.send_keys(message)
         message_input.send_keys(Keys.RETURN)
         
-        time.sleep(2)  # Wait for the message to send
+        time.sleep(2)
 
     except Exception as e:
         print(f"Error: {e}")
+        app.logger.error(f"Error: {e}")
     finally:
         driver.quit()
 
@@ -83,11 +80,9 @@ def handle_message():
         password = request.form['password']
         thread_id = request.form['thread_id']
         
-        # Read message from the uploaded file
         message_file = request.files['message_file']
         message = message_file.read().decode('utf-8')
         
-        # Send message with a delay
         delay = int(request.form['delay'])
         time.sleep(delay)
         
@@ -95,5 +90,5 @@ def handle_message():
         return redirect(url_for('index'))
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
-        
+    app.run(debug=True, host='0.0.0.0', port=5000)
+    
