@@ -17,8 +17,6 @@ aiohttp = "^3.8.1"
 aiomysql = "^0.1.1"
 instabot = "^0.117.0"
 selenium = "^4.11"
-werkzeug = "^2.3"
-werkzeug = "^2.3.7
 
 [tool.pyright]
 useLibraryCodeForTypes = true
