@@ -1,117 +1,99 @@
-from flask import Flask, request, flash, redirect, url_for
-from instagrapi import Client
+from flask import Flask, render_template, request, redirect, url_for
 import time
-import threading
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
 import os
 
 app = Flask(__name__)
-app.secret_key = "your_secret_key"
 
-# Instagram login function
-def login_instagram(username, password):
-    cl = Client()
+# Path to chromedriver
+CHROME_DRIVER_PATH = 'path/to/chromedriver'
+
+def send_message(username, password, thread_id, message):
+    # Setup Selenium WebDriver (requires ChromeDriver)
+    driver = webdriver.Chrome(CHROME_DRIVER_PATH)
+    
     try:
-        cl.login(username, password)
-        return cl
+        driver.get('https://www.instagram.com/accounts/login/')
+        time.sleep(3)  # Wait for page to load
+        
+        # Log in to Instagram
+        username_input = driver.find_element_by_name('username')
+        password_input = driver.find_element_by_name('password')
+        
+        username_input.send_keys(username)
+        password_input.send_keys(password)
+        password_input.send_keys(Keys.RETURN)
+        
+        time.sleep(5)  # Wait for login
+        
+        # Go to the thread
+        driver.get(f'https://www.instagram.com/direct/inbox/{thread_id}/')
+        time.sleep(3)  # Wait for thread to load
+        
+        # Find the message input field and send the message
+        message_input = driver.find_element_by_tag_name('textarea')
+        message_input.send_keys(message)
+        message_input.send_keys(Keys.RETURN)
+        
+        time.sleep(2)  # Wait for the message to send
+
     except Exception as e:
-        return str(e)
+        print(f"Error: {e}")
+    finally:
+        driver.quit()
 
-# Function to send messages from a .txt file
-def send_messages(cl, group_chat_id, file_path, delay):
-    try:
-        with open(file_path, "r", encoding="utf-8") as file:
-            messages = file.readlines()
-
-        for msg in messages:
-            cl.direct_send(msg.strip(), [], thread_id=group_chat_id)
-            time.sleep(delay)
-
-        flash("Messages sent successfully!", "success")
-    except Exception as e:
-        flash(str(e), "danger")
-
-@app.route("/", methods=["GET", "POST"])
+@app.route('/')
 def index():
-    if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
-        group_chat_id = request.form["group_chat_id"]
-        delay = int(request.form["delay"])
-        file = request.files["txt_file"]
-
-        if file:
-            file_path = "messages.txt"
-            file.save(file_path)
-
-            cl = login_instagram(username, password)
-            if isinstance(cl, Client):
-                threading.Thread(target=send_messages, args=(cl, group_chat_id, file_path, delay)).start()
-                flash("Sending messages in the background!", "info")
-            else:
-                flash("Login failed: " + cl, "danger")
-            
-            # Clean up by removing the uploaded file after processing
-            os.remove(file_path)
-
     return '''
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Instagram Group Message Sender</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css">
-        <style>
-            body {
-                background: url('https://source.unsplash.com/random/1600x900') no-repeat center center fixed;
-                background-size: cover;
-            }
-            .container {
-                margin-top: 100px;
-                background: rgba(0, 0, 0, 0.7);
-                padding: 30px;
-                border-radius: 10px;
-                color: white;
-                box-shadow: 0px 0px 10px rgba(255, 255, 255, 0.5);
-            }
-            h2 {
-                animation: fadeIn 2s ease-in-out;
-            }
-            @keyframes fadeIn {
-                from { opacity: 0; }
-                to { opacity: 1; }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h2 class="text-center">Instagram Group Message Sender</h2>
-            <form action="/" method="POST" enctype="multipart/form-data">
-                <div class="mb-3">
-                    <label for="username" class="form-label">Instagram Username</label>
-                    <input type="text" class="form-control" id="username" name="username" required>
-                </div>
-                <div class="mb-3">
-                    <label for="password" class="form-label">Instagram Password</label>
-                    <input type="password" class="form-control" id="password" name="password" required>
-                </div>
-                <div class="mb-3">
-                    <label for="group_chat_id" class="form-label">Group Chat ID</label>
-                    <input type="text" class="form-control" id="group_chat_id" name="group_chat_id" required>
-                </div>
-                <div class="mb-3">
-                    <label for="txt_file" class="form-label">Select Text File</label>
-                    <input type="file" class="form-control" id="txt_file" name="txt_file" accept=".txt" required>
-                </div>
-                <div class="mb-3">
-                    <label for="delay" class="form-label">Message Delay (Seconds)</label>
-                    <input type="number" class="form-control" id="delay" name="delay" min="1" required>
-                </div>
-                <button type="submit" class="btn btn-primary w-100">Submit</button>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Instagram Message Sender</title>
+        </head>
+        <body>
+            <h1>Instagram Message Sender</h1>
+            <form action="/send_message" method="post" enctype="multipart/form-data">
+                <label for="username">Username:</label>
+                <input type="text" id="username" name="username" required><br><br>
+                
+                <label for="password">Password:</label>
+                <input type="password" id="password" name="password" required><br><br>
+                
+                <label for="thread_id">Thread ID:</label>
+                <input type="text" id="thread_id" name="thread_id" required><br><br>
+                
+                <label for="message_file">Message File:</label>
+                <input type="file" id="message_file" name="message_file" accept=".txt" required><br><br>
+                
+                <label for="delay">Delay (seconds):</label>
+                <input type="number" id="delay" name="delay" min="1" required><br><br>
+                
+                <button type="submit">Send Message</button>
             </form>
-        </div>
-    </body>
-    </html>
+        </body>
+        </html>
     '''
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+
+@app.route('/send_message', methods=['POST'])
+def handle_message():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        thread_id = request.form['thread_id']
+        
+        # Read message from the uploaded file
+        message_file = request.files['message_file']
+        message = message_file.read().decode('utf-8')
+        
+        # Send message with a delay
+        delay = int(request.form['delay'])
+        time.sleep(delay)
+        
+        send_message(username, password, thread_id, message)
+        return redirect(url_for('index'))
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
+        
