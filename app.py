@@ -11,7 +11,7 @@ if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
 # Instagram Login Credentials
-INSTAGRAM_USERNAME = "nfyter"
+INSTAGRAM_USERNAME = "monksalutoi"
 INSTAGRAM_PASSWORD = "g-223344"
 
 # Target Group Chat (Thread ID)
