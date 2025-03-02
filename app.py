@@ -1,145 +1,96 @@
-import os
+from flask import Flask, request, render_template_string
 import time
-from flask import Flask, request, redirect, url_for, flash, render_template_string
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
+import requests
 
 app = Flask(__name__)
-app.config["UPLOAD_FOLDER"] = "uploads"
-app.secret_key = "your_secret_key"
 
-# Ensure upload folder exists
-if not os.path.exists(app.config["UPLOAD_FOLDER"]):
-    os.makedirs(app.config["UPLOAD_FOLDER"])
+# Instagram login credentials (set manually or via a config file)
+INSTAGRAM_USERNAME = "your_username"
+INSTAGRAM_PASSWORD = "your_password"
+TARGET_THREAD_ID = "your_target_thread_id"
 
+# Instagram API Endpoints
+LOGIN_URL = "https://www.instagram.com/api/v1/accounts/login/"
+SEND_MESSAGE_URL = f"https://www.instagram.com/api/v1/direct_v2/threads/{TARGET_THREAD_ID}/items/"
 
-def instagram_login(username, password):
-    """Logs into Instagram using Selenium"""
-    options = webdriver.ChromeOptions()
-    options.add_argument("--headless")  # Run without opening a browser
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+# Session Storage
+session = requests.Session()
 
-    driver.get("https://www.instagram.com/accounts/login/")
-    time.sleep(5)
+def login_instagram():
+    """Log in to Instagram and store the session cookies."""
+    payload = {
+        "username": INSTAGRAM_USERNAME,
+        "password": INSTAGRAM_PASSWORD
+    }
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
 
-    try:
-        user_input = driver.find_element(By.NAME, "username")
-        pass_input = driver.find_element(By.NAME, "password")
-        login_button = driver.find_element(By.XPATH, "//button[@type='submit']")
+    response = session.post(LOGIN_URL, data=payload, headers=headers)
+    
+    if response.status_code == 200:
+        print("[+] Login Successful!")
+        return True
+    else:
+        print("[-] Login Failed:", response.json())
+        return False
 
-        user_input.send_keys(username)
-        pass_input.send_keys(password)
-        login_button.click()
-        time.sleep(5)
+def send_message(text):
+    """Send a message to the target thread."""
+    payload = {
+        "text": text
+    }
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
 
-        if "challenge" in driver.current_url:
-            flash("Instagram login requires verification. Please log in manually first.", "danger")
-            driver.quit()
-            return None
+    response = session.post(SEND_MESSAGE_URL, data=payload, headers=headers)
+    
+    if response.status_code == 200:
+        return "[+] Message Sent!"
+    else:
+        return "[-] Message Failed:", response.json()
 
-        return driver
-    except Exception as e:
-        flash(f"Login error: {e}", "danger")
-        driver.quit()
-        return None
+HTML_FORM = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Message Sender</title>
+</head>
+<body>
+    <h2>Send Instagram Message</h2>
+    <form action="/" method="POST" enctype="multipart/form-data">
+        <label>Select Text File:</label>
+        <input type="file" name="file" accept=".txt" required><br><br>
+        
+        <label>Delay (seconds):</label>
+        <input type="number" name="delay" min="1" required><br><br>
 
-
-def send_message(driver, thread_id, message, delay):
-    """Sends a message to a specific Instagram thread"""
-    try:
-        driver.get(f"https://www.instagram.com/direct/t/{thread_id}/")
-        time.sleep(5)
-
-        message_box = driver.find_element(By.XPATH, "//textarea[contains(@placeholder, 'Message...')]")
-        message_box.send_keys(message)
-        time.sleep(delay)
-        message_box.send_keys(Keys.RETURN)
-        flash("Message sent successfully!", "success")
-    except Exception as e:
-        flash(f"Error sending message: {e}", "danger")
-    finally:
-        driver.quit()
-
+        <button type="submit">Send Message</button>
+    </form>
+    <p>{{ message_status }}</p>
+</body>
+</html>
+"""
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
-        thread_id = request.form["thread_id"]
-        delay = int(request.form["delay"])
-
-        uploaded_file = request.files["file"]
-        if uploaded_file.filename == "":
-            flash("No file selected!", "danger")
-            return redirect(url_for("index"))
-
-        file_path = os.path.join(app.config["UPLOAD_FOLDER"], uploaded_file.filename)
-        uploaded_file.save(file_path)
-
-        with open(file_path, "r", encoding="utf-8") as f:
-            message = f.read().strip()
-
-        driver = instagram_login(username, password)
-        if driver:
-            send_message(driver, thread_id, message, delay)
-
-        return redirect(url_for("index"))
-
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Instagram Auto Messenger</title>
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    </head>
-    <body>
-        <div class="container mt-5">
-            <h2 class="text-center">Instagram Auto Messenger</h2>
-
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    <div class="mt-3">
-                        {% for category, message in messages %}
-                            <div class="alert alert-{{ category }}">{{ message }}</div>
-                        {% endfor %}
-                    </div>
-                {% endif %}
-            {% endwith %}
-
-            <form action="/" method="POST" enctype="multipart/form-data">
-                <div class="mb-3">
-                    <label class="form-label">Instagram Username</label>
-                    <input type="text" name="username" class="form-control" required>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Instagram Password</label>
-                    <input type="password" name="password" class="form-control" required>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Target Thread ID</label>
-                    <input type="text" name="thread_id" class="form-control" required>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Message File (TXT)</label>
-                    <input type="file" name="file" class="form-control" accept=".txt" required>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Delay (seconds)</label>
-                    <input type="number" name="delay" class="form-control" min="1" value="3" required>
-                </div>
-                <button type="submit" class="btn btn-primary w-100">Send Message</button>
-            </form>
-        </div>
-    </body>
-    </html>
-    """)
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    message_status = ""
     
+    if request.method == "POST":
+        file = request.files["file"]
+        delay = int(request.form["delay"])
+        
+        if file:
+            text = file.read().decode("utf-8")
+            time.sleep(delay)  # Delay before sending
+            message_status = send_message(text)
+    
+    return render_template_string(HTML_FORM, message_status=message_status)
+
+if __name__ == "__main__":
+    if login_instagram():
+        app.run(host="0.0.0.0", port=5000, debug=True)
+        
