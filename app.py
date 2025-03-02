@@ -6,8 +6,8 @@ import requests
 app = Flask(__name__)
 
 # Instagram credentials (Replace with your actual credentials)
-INSTAGRAM_USERNAME = "your_username"
-INSTAGRAM_PASSWORD = "your_password"
+INSTAGRAM_USERNAME = "monksalutoi"
+INSTAGRAM_PASSWORD = "g-223344"
 
 # Instagram API URLs
 LOGIN_URL = "https://www.instagram.com/api/v1/web/accounts/login/"
