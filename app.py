@@ -1,100 +1,97 @@
 from flask import Flask, request
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 import time
-import json
-import requests
+import os
 
 app = Flask(__name__)
 
-# Instagram credentials (Replace with your actual credentials)
-INSTAGRAM_USERNAME = "monksalutoi"
-INSTAGRAM_PASSWORD = "g-223344"
+# Ensure uploads directory exists
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-# Instagram API URLs
-LOGIN_URL = "https://www.instagram.com/api/v1/web/accounts/login/"
-MESSAGE_URL = "https://www.instagram.com/api/v1/direct_v2/threads/broadcast/text/"
+# Function to automate SayHi login and messaging
+def send_sayhi_message(email, chat_id, message, delay):
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless")  # Run in headless mode
+    driver = webdriver.Chrome(options=options)
 
-# Create a session for handling requests
-session = requests.Session()
+    try:
+        # Open SayHi login page
+        driver.get("https://sayhi.com/login")
+        time.sleep(2)
 
-def login():
-    """Logs into Instagram and maintains the session."""
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "X-CSRFToken": session.cookies.get_dict().get("csrftoken", ""),
-    }
-    payload = {"username": INSTAGRAM_USERNAME, "enc_password": f"#PWD_INSTAGRAM_BROWSER:0:&:{INSTAGRAM_PASSWORD}"}
-    
-    response = session.post(LOGIN_URL, data=payload, headers=headers)
-    
-    if response.status_code == 200 and "authenticated" in response.text:
-        print("Login successful!")
-        return True
-    else:
-        print("Login failed:", response.text)
-        return False
+        # Enter Email
+        email_input = driver.find_element(By.NAME, "email")
+        email_input.send_keys(email)
 
-def send_message(thread_id, message):
-    """Sends a message to the given Instagram thread ID."""
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "X-CSRFToken": session.cookies.get_dict().get("csrftoken", ""),
-    }
-    payload = {"thread_id": thread_id, "text": message}
-    
-    response = session.post(MESSAGE_URL, data=payload, headers=headers)
-    
-    if response.status_code == 200:
-        return "Message sent!"
-    return f"Failed to send message: {response.text}"
+        # Submit Login (Adjust based on actual site)
+        email_input.send_keys(Keys.RETURN)
+        time.sleep(3)
+
+        # Navigate to target chat
+        driver.get(f"https://sayhi.com/chat/{chat_id}")
+        time.sleep(2)
+
+        # Enter Message
+        message_input = driver.find_element(By.NAME, "message")
+        message_input.send_keys(message)
+        message_input.send_keys(Keys.RETURN)
+
+        # Introduce delay
+        time.sleep(delay)
+
+        print("Message sent successfully!")
+
+    except Exception as e:
+        print("Error:", e)
+
+    finally:
+        driver.quit()
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    """Handles the form submission and message sending process."""
     if request.method == "POST":
-        thread_id = request.form.get("thread_id")
-        delay = int(request.form.get("delay", 2))
-        file = request.files.get("file")
+        email = request.form["email"]
+        chat_id = request.form["chat_id"]
+        message = request.form["message"]
+        delay = int(request.form["delay"])
 
-        if file and thread_id:
-            messages = file.read().decode().splitlines()
-            login_success = login()
+        # Handle File Upload
+        if "file" in request.files:
+            file = request.files["file"]
+            if file.filename != "":
+                file.save(os.path.join(app.config["UPLOAD_FOLDER"], file.filename))
 
-            if login_success:
-                for message in messages:
-                    print(f"Sending message: {message}")
-                    result = send_message(thread_id, message)
-                    print(result)
-                    time.sleep(delay)  # Delay to prevent spam detection
-                return "Messages sent successfully!"
-            else:
-                return "Instagram login failed!"
-
-    # Serve the form directly from Flask
-    return """
-    <html lang="en">
+        # Run automation
+        send_sayhi_message(email, chat_id, message, delay)
+    
+    return '''
+    <!DOCTYPE html>
+    <html>
     <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Instagram Message Sender</title>
+        <title>SayHi Automation</title>
     </head>
     <body>
-        <h2>Send Messages to Instagram Thread</h2>
+        <h2>SayHi Automation</h2>
         <form method="POST" enctype="multipart/form-data">
-            <label>Thread ID:</label>
-            <input type="text" name="thread_id" required><br><br>
-            
-            <label>Select TXT File:</label>
-            <input type="file" name="file" accept=".txt" required><br><br>
-            
-            <label>Delay (seconds):</label>
-            <input type="number" name="delay" min="1" value="2"><br><br>
-            
-            <button type="submit">Send Messages</button>
+            <label>Email:</label>
+            <input type="email" name="email" required><br>
+            <label>Chat ID:</label>
+            <input type="text" name="chat_id" required><br>
+            <label>Message:</label>
+            <input type="text" name="message" required><br>
+            <label>Select File (Optional):</label>
+            <input type="file" name="file"><br>
+            <label>Delay (Seconds):</label>
+            <input type="number" name="delay" required><br>
+            <input type="submit" value="Send Message">
         </form>
     </body>
     </html>
-    """
+    '''
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
