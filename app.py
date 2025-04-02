@@ -1,5 +1,3 @@
-__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
 from flask import Flask, request, redirect, url_for, session, render_template_string
 from instagrapi import Client
 import time
